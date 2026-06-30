@@ -5,21 +5,19 @@
 
 [DscResource()]
 class RegistryPolicy {
-    
+
     # Property: Holds the path to the .POL file
     [DscProperty(Key)]
-    [String] $Path;
+    [String] $Path
 
     [DscProperty()]
-    [String[]] $Entries = @("Software\Policies");
+    [String[]] $Entries = @('Software\Policies')
 
-    [void] Set()
-    {
+    [void] Set() {
         Import-GPRegistryPolicy -Path $this.Path -LocalMachine
     }
 
-    [bool] Test()
-    {
+    [bool] Test() {
         [bool] $Result = $false
 
         $Result = Test-GPRegistryPolicy -Path $this.Path -LocalMachine -Entries $this.Entries
@@ -27,10 +25,9 @@ class RegistryPolicy {
         return $Result
     }
 
-    [RegistryPolicy] Get()
-    {
+    [RegistryPolicy] Get() {
         $this.Path = $null
-        $this.Entries = @("Software\Policies");
+        $this.Entries = @('Software\Policies')
 
         return $this
     }

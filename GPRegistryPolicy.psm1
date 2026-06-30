@@ -6,8 +6,7 @@
 #
 ###########################################################
 
-data LocalizedData
-{
+data LocalizedData {
     # culture="en-US"
     ConvertFrom-StringData @'
     InvalidHeader = File '{0}' has an invalid header.
@@ -21,7 +20,7 @@ data LocalizedData
 '@
 }
 
-Import-LocalizedData  LocalizedData -filename GPRegistryPolicy.Strings.psd1
+Import-LocalizedData LocalizedData -FileName GPRegistryPolicy.Strings.psd1
 Import-Module "$PSScriptRoot\GPRegistryPolicyParser.psm1" -DisableNameChecking
 
 $script:SystemAndAdminAccounts = @(
@@ -34,10 +33,10 @@ $script:WellKnownSids = @(
 )
 
 $script:DefaultEntries = @(
-    "Software\Policies"
+    'Software\Policies'
 )
 
-<# 
+<#
 .SYNOPSIS
 Applies a registry policy.
 
@@ -57,17 +56,16 @@ A prefix that will be prepended to the given key.
 .PARAMETER SID
 The SID that defines which key in Users division is going to be used.
 #>
-function Apply-GPRegistryPolicy
-{
+function Apply-GPRegistryPolicy {
     [OutputType([array])]
     param (
-		[Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $true)]
         [GPRegistryPolicy]
         $RegistryPolicy,
 
-        [ValidateSet("LocalMachine", "CurrentUser", "Users")]
+        [ValidateSet('LocalMachine', 'CurrentUser', 'Users')]
         [string]
-        $Division = "LocalMachine",
+        $Division = 'LocalMachine',
 
         [string]
         [ValidateNotNullOrEmpty()]
@@ -78,111 +76,90 @@ function Apply-GPRegistryPolicy
         $SID
     )
 
-    switch ($Division) 
-    { 
-        'LocalMachine' { $Hive = [Microsoft.Win32.Registry]::LocalMachine } 
-        'CurrentUser'  { $Hive = [Microsoft.Win32.Registry]::CurrentUser } 
-        'Users'        { $Hive = [Microsoft.Win32.Registry]::Users } 
+    switch ($Division) {
+        'LocalMachine' { $Hive = [Microsoft.Win32.Registry]::LocalMachine }
+        'CurrentUser' { $Hive = [Microsoft.Win32.Registry]::CurrentUser }
+        'Users' { $Hive = [Microsoft.Win32.Registry]::Users }
     }
 
     $targetKeyName = $RegistryPolicy.KeyName
 
     # if we have a prefix, prepend that to the key name
-    if ($PSBoundParameters.ContainsKey('KeyPrefix'))
-    {
+    if ($PSBoundParameters.ContainsKey('KeyPrefix')) {
         $targetKeyName = $KeyPrefix + '\' + $targetKeyName
     }
 
     # if we have a SID in Users division, prepend that to the key name
-    if (($Division -ieq "Users") -and ($PSBoundParameters.ContainsKey('SID')))
-    {
+    if (($Division -ieq 'Users') -and ($PSBoundParameters.ContainsKey('SID'))) {
         $targetKeyName = $SID + '\' + $targetKeyName
     }
 
-    try
-    {
+    try {
         # Create a new subkey or open an existing subkey for write access
         $key = $Hive.CreateSubKey($targetKeyName)
 
         # If value, type, size, or data are missing or zero, only the registry key is created.
         $keyOnly = ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueName)) -or
-                   ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueType)) -or
-                   ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueLength)) -or
-                   ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueData))
+        ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueType)) -or
+        ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueLength)) -or
+        ([System.String]::IsNullOrEmpty($RegistryPolicy.ValueData))
 
 
-        if ( $KeyOnly )
-        {
+        if ( $KeyOnly ) {
             return
         }
 
-        if ( $RegistryPolicy.ValueName -ieq "**DeleteValues" )
-        {
+        if ( $RegistryPolicy.ValueName -ieq '**DeleteValues' ) {
             $ValueNames = ($RegistryPolicy.ValueData).Split(';')
             # TODO: Assert on type being REG_SZ
-            Assert ($RegistryPolicy.ValueType -eq [RegType]::REG_SZ) "Failed"
-            foreach($valueName in $ValueNames)
-            {
-                if (-not ([System.String]::IsNullOrEmpty($valueName)))
-                {
-                    try
-                    {
+            Assert ($RegistryPolicy.ValueType -eq [RegType]::REG_SZ) 'Failed'
+            foreach ($valueName in $ValueNames) {
+                if (-not ([System.String]::IsNullOrEmpty($valueName))) {
+                    try {
                         $key.DeleteValue($valueName)
                     }
-                    catch
-                    {
+                    catch {
                         # Do nothing
                     }
                 }
             }
         }
-        elseif ( ($RegistryPolicy.ValueName).StartsWith("**Del.") )
-        {
-            $ValueName = ($RegistryPolicy.ValueName).Substring( ($RegistryPolicy.ValueName).IndexOf('.')+1 )
+        elseif ( ($RegistryPolicy.ValueName).StartsWith('**Del.') ) {
+            $ValueName = ($RegistryPolicy.ValueName).Substring( ($RegistryPolicy.ValueName).IndexOf('.') + 1 )
             # TODO: Assert on type being REG_SZ
             # TODO: Assert on data being ' '
             $key.DeleteValue($valueName)
         }
-        elseif ( $RegistryPolicy.ValueName -ieq "**DelVals." )
-        {
+        elseif ( $RegistryPolicy.ValueName -ieq '**DelVals.' ) {
             $ValueNames = $Key.GetValueNames()
             # TODO: Assert on type being REG_SZ
             # TODO: Assert on data being ' '
-            foreach($valueName in $ValueNames)
-            {
+            foreach ($valueName in $ValueNames) {
                 $key.DeleteValue($valueName)
             }
         }
-        elseif ( $RegistryPolicy.ValueName -ieq "**DeleteKeys" )
-        {
+        elseif ( $RegistryPolicy.ValueName -ieq '**DeleteKeys' ) {
             $SubKeys = ($RegistryPolicy.ValueData).Split(';')
             # TODO: Assert on type being REG_SZ
-            foreach($subkey in $SubKeys)
-            {
-                if (-not ([System.String]::IsNullOrEmpty($subkey)))
-                {
-                    try
-                    {
+            foreach ($subkey in $SubKeys) {
+                if (-not ([System.String]::IsNullOrEmpty($subkey))) {
+                    try {
                         $key.DeleteSubKeyTree($subkey)
                     }
-                    catch
-                    {
+                    catch {
                         # Do nothing
                     }
                 }
             }
         }
-        elseif ( $RegistryPolicy.ValueName -ieq "**SecureKey" )
-        {
+        elseif ( $RegistryPolicy.ValueName -ieq '**SecureKey' ) {
             $AccessLevel = [System.Int32] $RegistryPolicy.ValueData
             # TODO: Assert on type being REG_DWORD
             $AccessControl = $key.GetAccessControl()
             $AccessRules = $AccessControl.GetAccessRules($true,$true,[System.Security.Principal.NTAccount])
 
-            foreach ($Access in $AccessRules)
-            {
-                if ($script:SystemAndAdminAccounts.Contains($Access.IdentityReference.ToString()))
-                {
+            foreach ($Access in $AccessRules) {
+                if ($script:SystemAndAdminAccounts.Contains($Access.IdentityReference.ToString())) {
                     [System.Security.AccessControl.RegistryAccessRule] $NewAccessRule = [System.Security.AccessControl.RegistryAccessRule]::new(
                         $Access.IdentityReference,
                         [System.Security.AccessControl.RegistryRights]::FullControl,
@@ -191,10 +168,9 @@ function Apply-GPRegistryPolicy
                         $Access.AccessControlType
                     )
                 }
-                elseif ($script:WellKnownSids.Contains($access.IdentityReference.ToString()))
-                {
+                elseif ($script:WellKnownSids.Contains($access.IdentityReference.ToString())) {
                     $strSID = $access.IdentityReference.ToString()
-                    $groupName = $strSID.Substring($strSID.IndexOf('\')+1)
+                    $groupName = $strSID.Substring($strSID.IndexOf('\') + 1)
                     [System.Security.AccessControl.RegistryAccessRule] $NewAccessRule = [System.Security.AccessControl.RegistryAccessRule]::new(
                         $groupName,
                         [System.Security.AccessControl.RegistryRights]::ReadKey,
@@ -203,8 +179,7 @@ function Apply-GPRegistryPolicy
                         $access.AccessControlType
                     )
                 }
-                else
-                {
+                else {
                     [System.Security.AccessControl.RegistryAccessRule] $NewAccessRule = [System.Security.AccessControl.RegistryAccessRule]::new(
                         $access.IdentityReference,
                         [System.Security.AccessControl.RegistryRights]::ReadKey,
@@ -217,58 +192,47 @@ function Apply-GPRegistryPolicy
                 $AccessControl.RemoveAccessRule($Access)
                 $AccessControl.SetAccessRule($NewAccessRule)
             }
-        }   
-        elseif ( ($RegistryPolicy.ValueName).StartsWith("**soft.") )
-        {
+        }
+        elseif ( ($RegistryPolicy.ValueName).StartsWith('**soft.') ) {
             $CurrentValueNames = $Key.GetValueNames()
-            $ValueName = ($RegistryPolicy.ValueName).Substring( ($RegistryPolicy.ValueName).IndexOf('.')+1 )
-            if ( -not ($CurrentValueNames.Contains($ValueName)) )
-            {
+            $ValueName = ($RegistryPolicy.ValueName).Substring( ($RegistryPolicy.ValueName).IndexOf('.') + 1 )
+            if ( -not ($CurrentValueNames.Contains($ValueName)) ) {
                 $type = Get-RegType -Type $RegistryPolicy.ValueType
                 $key.SetValue($RegistryPolicy.ValueName, $RegistryPolicy.ValueData, $type)
             }
         }
-        else
-        {
+        else {
             # This is not a special value. So just update the value.
-            if ($RegistryPolicy.ValueType -eq [RegType]::REG_MULTI_SZ)
-            {
+            if ($RegistryPolicy.ValueType -eq [RegType]::REG_MULTI_SZ) {
                 [string[]] $data = ($RegistryPolicy.ValueData).Split("`0",[System.StringSplitOptions]::RemoveEmptyEntries)
             }
-            elseif ($RegistryPolicy.ValueType -eq [RegType]::REG_MULTI_SZ)
-            {
+            elseif ($RegistryPolicy.ValueType -eq [RegType]::REG_MULTI_SZ) {
                 [byte[]] $data = [System.Text.Encoding]::Unicode.GetBytes($RegistryPolicy.ValueData)
             }
-            elseif ($RegistryPolicy.ValueType -eq [RegType]::REG_BINARY)
-            {
+            elseif ($RegistryPolicy.ValueType -eq [RegType]::REG_BINARY) {
                 [byte[]] $data = $RegistryPolicy.ValueData
             }
-            else
-            {
+            else {
                 $data = $RegistryPolicy.ValueData
             }
-        
+
             $key.SetValue($RegistryPolicy.ValueName, $data, $RegistryPolicy.ValueType)
         }
     }
-    finally
-    {
-        if ($key)
-        {
-            if ($PSVersionTable.PSEdition -ieq 'Core')
-            {
+    finally {
+        if ($key) {
+            if ($PSVersionTable.PSEdition -ieq 'Core') {
                 $key.Flush()
                 $key.Dispose()
             }
-            else
-            {
+            else {
                 $key.Close()
             }
         }
     }
 }
 
-<# 
+<#
 .SYNOPSIS
 Reads a .pol file containing group policy registry entries and applies its contents to the machine.
 
@@ -310,24 +274,23 @@ C:\PS> Import-GPRegistryPolicy -Path "C:\Registry.pol" -LocalMachine -KeyPrefix 
 .OUTPUT
 None.
 #>
-function Import-GPRegistryPolicy
-{
-    [CmdletBinding(DefaultParameterSetName='LocalMachine')]
+function Import-GPRegistryPolicy {
+    [CmdletBinding(DefaultParameterSetName = 'LocalMachine')]
     param (
-		[Parameter(Mandatory = $true,Position=0)]
+        [Parameter(Mandatory = $true,Position = 0)]
         [ValidateNotNullOrEmpty()]
         [string]
         $Path,
 
-		[Parameter(ParameterSetName = 'LocalMachine')]
+        [Parameter(ParameterSetName = 'LocalMachine')]
         [switch]
         $LocalMachine = $true,
 
-		[Parameter(ParameterSetName = 'CurrentUser')]
+        [Parameter(ParameterSetName = 'CurrentUser')]
         [switch]
         $CurrentUser = $false,
 
-		[Parameter(ParameterSetName = 'Users')]
+        [Parameter(ParameterSetName = 'Users')]
         [ValidateNotNullOrEmpty()]
         [string]
         $Username = "$($env:USERDOMAIN)\$($env:USERNAME)",
@@ -339,45 +302,39 @@ function Import-GPRegistryPolicy
 
     $Parameters = @{}
 
-    switch ($PsCmdlet.ParameterSetName) 
-    { 
-        'LocalMachine' 
-        { 
+    switch ($PsCmdlet.ParameterSetName) {
+        'LocalMachine' {
             $Parameters.Add('Division', 'LocalMachine')
-        } 
+        }
 
-        'CurrentUser'
-        {
+        'CurrentUser' {
             $Parameters.Add('Division', 'CurrentUser')
-        } 
-        
-        'Users'  {
+        }
+
+        'Users' {
             $Parameters.Add('Division', 'Users')
 
             # Translate the username into SID
             $objUser = New-Object System.Security.Principal.NTAccount($Username)
             $strSID = $objUser.Translate([System.Security.Principal.SecurityIdentifier])
             $Parameters.Add('SID', $strSID.Value)
-        } 
+        }
     }
 
-    if ($PSBoundParameters.ContainsKey('KeyPrefix'))
-    {
+    if ($PSBoundParameters.ContainsKey('KeyPrefix')) {
         $Parameters.Add('KeyPrefix', $KeyPrefix)
     }
 
     $RegistryPolicies = Parse-PolFile -Path $Path
 
-    foreach ($rp in $RegistryPolicies)
-    {
-        if ($rp -ne $null)
-        {
+    foreach ($rp in $RegistryPolicies) {
+        if ($rp -ne $null) {
             Apply-GPRegistryPolicy -RegistryPolicy $rp @Parameters
         }
     }
 }
 
-<# 
+<#
 .SYNOPSIS
 Reads registry entries and write them in a .pol file.
 
@@ -426,46 +383,42 @@ None. You cannot pipe objects to Import-GPRegistryPolicy.
 .OUTPUT
 None.
 #>
-function Export-GPRegistryPolicy
-{
-    [CmdletBinding(DefaultParameterSetName='LocalMachine')]
+function Export-GPRegistryPolicy {
+    [CmdletBinding(DefaultParameterSetName = 'LocalMachine')]
     param (
-		[Parameter(Mandatory = $true,Position=0)]
+        [Parameter(Mandatory = $true,Position = 0)]
         [ValidateNotNullOrEmpty()]
         [string]
         $Path,
-        
-		[Parameter(Position=1)]
+
+        [Parameter(Position = 1)]
         [string[]]
         $Entries = $script:DefaultEntries,
 
-		[Parameter(Mandatory = $true, ParameterSetName = 'LocalMachine')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'LocalMachine')]
         [switch]
         $LocalMachine = $true,
 
-		[Parameter(Mandatory = $true, ParameterSetName = 'CurrentUser')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'CurrentUser')]
         [switch]
         $CurrentUser = $false,
 
-		[Parameter(ParameterSetName = 'Users')]
+        [Parameter(ParameterSetName = 'Users')]
         [ValidateNotNullOrEmpty()]
         [string]
         $Username = "$($env:USERDOMAIN)\$($env:USERNAME)"
     )
 
-    switch ($PsCmdlet.ParameterSetName) 
-    { 
-        'LocalMachine' 
-        { 
+    switch ($PsCmdlet.ParameterSetName) {
+        'LocalMachine' {
             $Division = 'LocalMachine'
-        } 
+        }
 
-        'CurrentUser'
-        {
+        'CurrentUser' {
             $Division = 'CurrentUser'
-        } 
-        
-        'Users'  {
+        }
+
+        'Users' {
             $Division = 'Users'
 
             # Translate the username into SID
@@ -474,12 +427,12 @@ function Export-GPRegistryPolicy
             $SID = $strSID.Value
 
             # Modify the entries and prepend the SID of the selected user to all of them.
-            $Entries = $Entries | % { $SID+'\'+$_ }
-        } 
+            $Entries = $Entries | ForEach-Object { $SID + '\' + $_ }
+        }
     }
 
     $RegistryPolicies = Read-RegistryPolicies -Entries $Entries -Division $Division
-    
+
     Create-GPRegistryPolicyFile -Path $Path
 
     Append-RegistryPolicies -RegistryPolicies $RegistryPolicies -Path $Path
@@ -487,13 +440,13 @@ function Export-GPRegistryPolicy
 
 
 
-<# 
+<#
 .SYNOPSIS
 Reads a .pol file containing group policy registry entries and tests its contents against current registry.
 
 .DESCRIPTION
 Reads a .pol file containing group policy registry entries and tests its contents against current registry.
-The division to which the contents must be applied has to be defined using one of the three available options 
+The division to which the contents must be applied has to be defined using one of the three available options
 for **LocalMachine**, **CurrentUser**, or **Username**.
 
 .PARAMETER Path
@@ -532,28 +485,27 @@ None. You cannot pipe objects to Test-GPRegistryPolicy.
 .OUTPUT
 None.
 #>
-function Test-GPRegistryPolicy
-{
-    [CmdletBinding(DefaultParameterSetName='LocalMachine')]
+function Test-GPRegistryPolicy {
+    [CmdletBinding(DefaultParameterSetName = 'LocalMachine')]
     param (
-		[Parameter(Mandatory = $true,Position=0)]
+        [Parameter(Mandatory = $true,Position = 0)]
         [ValidateNotNullOrEmpty()]
         [string]
         $Path,
-        
-		[Parameter(Position=1)]
+
+        [Parameter(Position = 1)]
         [string[]]
         $Entries = $script:DefaultEntries,
 
-		[Parameter(ParameterSetName = 'LocalMachine')]
+        [Parameter(ParameterSetName = 'LocalMachine')]
         [switch]
         $LocalMachine = $true,
 
-		[Parameter(ParameterSetName = 'CurrentUser')]
+        [Parameter(ParameterSetName = 'CurrentUser')]
         [switch]
         $CurrentUser = $false,
 
-		[Parameter(ParameterSetName = 'Users')]
+        [Parameter(ParameterSetName = 'Users')]
         [ValidateNotNullOrEmpty()]
         [string]
         $Username = "$($env:USERDOMAIN)\$($env:USERNAME)"
@@ -561,20 +513,19 @@ function Test-GPRegistryPolicy
 
     $Parameters = @{}
 
-    switch ($PsCmdlet.ParameterSetName) 
-    { 
-        'LocalMachine'  { 
+    switch ($PsCmdlet.ParameterSetName) {
+        'LocalMachine' {
             $Parameters.Add('LocalMachine', $true)
             $Hive = [Microsoft.Win32.Registry]::LocalMachine
         }
-        'CurrentUser'  { 
+        'CurrentUser' {
             $Parameters.Add('CurrentUser', $true)
             $Hive = [Microsoft.Win32.Registry]::CurrentUser
-        } 
-        'Users'  { 
+        }
+        'Users' {
             $Parameters.Add('Username', $Username)
             $Hive = [Microsoft.Win32.Registry]::Users
-        } 
+        }
     }
 
     $tempID = New-Guid
@@ -582,7 +533,7 @@ function Test-GPRegistryPolicy
     $tempFileActual = Join-Path -Path $env:TEMP -ChildPath "$tempID.actual.pol"
     $tempFileExpected = Join-Path -Path $env:TEMP -ChildPath "$tempID.expected.pol"
     $tempRegKey = "Software\$tempID"
-    
+
     # Export the target registry entries into a temp file
     Export-GPRegistryPolicy -Path $tempFile -Entries $Entries @Parameters -ErrorAction SilentlyContinue
 
@@ -597,22 +548,20 @@ function Test-GPRegistryPolicy
 
     # Export the the temp registry key into a file to get expected settings
     Export-GPRegistryPolicy -Path $tempFileExpected -Entries @($tempRegKey) @Parameters
-    
+
     $ActualRP = Parse-PolFile -Path $tempFileActual
     $ExpectedRP = Parse-PolFile -Path $tempFileExpected
-    
+
     $ActualRPInJSON = ConvertTo-Json -InputObject $ActualRP
     $ExpectedRPInJSON = ConvertTo-Json -InputObject $ExpectedRP
-    
 
-    if (($ActualRPInJSON -ne $null) -and ($ExpectedRPInJSON -ne $null))
-    {
+
+    if (($ActualRPInJSON -ne $null) -and ($ExpectedRPInJSON -ne $null)) {
         $DiffResults = Compare-Object `
             -ReferenceObject ($ActualRPInJSON) `
             -DifferenceObject ($ExpectedRPInJSON)
     }
-    else
-    {
+    else {
         $DiffResults = 'FAILED' # Anything but a null value for $DiffResults indicates a failure.
     }
 
@@ -622,11 +571,10 @@ function Test-GPRegistryPolicy
     Remove-Item -Path $tempFileExpected -Force -ErrorAction SilentlyContinue
     $Hive.DeleteSubKeyTree($tempRegKey)
 
-    return ([string]::IsNullOrEmpty($DiffResults))    
+    return ([string]::IsNullOrEmpty($DiffResults))
 }
 
-Function Get-AllKeys
-{
+function Get-AllKeys {
     [OutputType([Array])]
     param (
         [Parameter(Mandatory)]
@@ -636,10 +584,8 @@ Function Get-AllKeys
 
     $Result = @()
 
-    foreach( $RP in $RegistryPolicies)
-    {
-        if (-not $Result.Contains($RP.keyName))
-        {
+    foreach ( $RP in $RegistryPolicies) {
+        if (-not $Result.Contains($RP.keyName)) {
             $Result += ,$RP.keyName
         }
     }
@@ -647,8 +593,7 @@ Function Get-AllKeys
     return $Result
 }
 
-Function Assert
-{
+function Assert {
     param (
         [Parameter(Mandatory)]
         $Condition,
@@ -659,9 +604,8 @@ Function Assert
         $ErrorMessage
     )
 
-    if (!$Condition) 
-    {
-        throw $ErrorMessage;
+    if (!$Condition) {
+        throw $ErrorMessage
     }
 }
 
