@@ -169,11 +169,15 @@ function Parse-PolFile {
         $Path
     )
 
-    [Array] $RegistryPolicies = @()
     $index = 0
 
     [string] $policyContents = Get-Content $Path -Raw
-    [byte[]] $policyContentInBytes = Get-Content $Path -Raw -Encoding Byte
+    if ($PSVersionTable.psversion.Major -gt 5) {
+        [byte[]] $policyContentInBytes = Get-Content $Path -Raw -AsByteStream
+    }
+    else {
+        [byte[]] $policyContentInBytes = Get-Content $Path -Raw -Encoding Byte
+    }
 
     # 4 bytes are the signature PReg
     $signature = [System.Text.Encoding]::ASCII.GetString($policyContents[0..3])
@@ -268,12 +272,8 @@ function Parse-PolFile {
         Assert ($rightbracket -ge 0) 'Missing the closing bracket.'
         $index = $rightbracket + 2
 
-        $entry = New-GPRegistryPolicy $keyName $valueName $valueType $valueLength $value
-
-        $RegistryPolicies += $entry
+        New-GPRegistryPolicy $keyName $valueName $valueType $valueLength $value
     }
-
-    return $RegistryPolicies
 }
 
 <#
@@ -499,7 +499,12 @@ function Append-RegistryPolicies {
 
     foreach ($rp in $RegistryPolicies) {
         [Byte[]] $Entry = Create-RegistrySettingsEntry -RegistryPolicy $rp
-        $Entry | Add-Content -Path $Path -Encoding Byte
+        if ($PSVersionTable.psversion.Major -gt 5) {
+            $Entry | Add-Content -Path $Path -AsByteStream
+        }
+        else {
+            $Entry | Add-Content -Path $Path -Encoding Byte
+        }
     }
 }
 
@@ -549,9 +554,15 @@ function Create-GPRegistryPolicyFile {
     $null = Remove-Item -Path $Path -Force -Verbose -ErrorAction SilentlyContinue
 
     New-Item -Path $Path -Force -Verbose -ErrorAction Stop | Out-Null
-
-    [System.BitConverter]::GetBytes($script:REGFILE_SIGNATURE) | Add-Content -Path $Path -Encoding Byte
-    [System.BitConverter]::GetBytes($script:REGISTRY_FILE_VERSION) | Add-Content -Path $Path -Encoding Byte
+    if ($PSVersionTable.psversion.Major -gt 5) {
+        $Entry | Add-Content -Path $Path -AsByteStream
+        [System.BitConverter]::GetBytes($script:REGFILE_SIGNATURE) | Add-Content -Path $Path -AsByteStream
+        [System.BitConverter]::GetBytes($script:REGISTRY_FILE_VERSION) | Add-Content -Path $Path -AsByteStream
+    }
+    else {
+        [System.BitConverter]::GetBytes($script:REGFILE_SIGNATURE) | Add-Content -Path $Path -Encoding Byte
+        [System.BitConverter]::GetBytes($script:REGISTRY_FILE_VERSION) | Add-Content -Path $Path -Encoding Byte
+    }
 }
 
 <#
